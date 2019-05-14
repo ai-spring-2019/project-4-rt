@@ -1,7 +1,14 @@
 """
-PLEASE DOCUMENT HERE
 
-Usage: python3 project4.py DATASET.csv
+Author: Richard Teerlink
+Project: Classification with Neural Networks
+Description: Implements classifications utilizing neural networks. The training of the neural network's weights are done using back 
+             propogation of errors. Currently the code is set up to test classification problems using k cross validation. You can
+             run the code by typing something of the format under Usage into the command line. To test 3-bit incrementer I just
+             had my network ouput it's data into a list an compared that to the input and intended output.
+
+Usage: python3 project4.py DATASET.csv learning_rate k epochs
+
 """
 
 import csv, sys, random, math
@@ -94,7 +101,8 @@ class NeuralNetworkNode():
 
 class NeuralNetwork():
     def __init__(self, neural_data_list):
-        """ Given a list of neural network data creates our neural network. """
+        """ Given a list of neural network data creates our neural network. Contains methods for 
+            forward propagation, back propagation, predict class, and back propagation training. """
 
         if len(neural_data_list) < 2:
             print("Invalid amount of layers.")
@@ -160,19 +168,79 @@ class NeuralNetwork():
                     node.weights[weight_num] = node.weights[weight_num] + learning_rate*self.layers[layer_num-1][weight_num].activation*node.error
 
 
-    def back_propagation_training(self, training_list, learning_rate):
+    def back_propagation_training(self, training_list, epochs, learning_rate):
         """ Training for our whole network. """
 
-        # For all of the training data given run our input through and then back propagate the error
-        for example in training_list:
-            input_list, output_list = example
-            self.forward_propagate(input_list)
-            self.back_propagate(output_list, learning_rate)
+        # Train our data for our given number of epochs
+        for epoch in range(0,epochs):
+            # For all of the training data given run our input through and then back propagate the error
+            for example in training_list:
+                input_list, output_list = example
+                self.forward_propagate(input_list)
+                self.back_propagate(output_list, learning_rate)
+                print(self.layers[len(self.layers)-1][0].activation)
+                print(self.layers[len(self.layers)-1][0].weights)
 
     def predict_class(self):
-        """ Returns a predicted class. """
+        """ Returns a predicted class for classification problems. """
 
+        # Get a list of our outputs
+        output_list = []
+        for i in self.layers[len(self.layers) - 1]:
+            output_list.append(i.activation)
 
+        max_value = 0
+        max_pos = 0
+
+        # Return our class closest to 1
+        for j in range(0, len(output_list) - 1):
+            if output_list[j] > max_value:
+                max_value = output_list[j]
+                max_pos = j
+        return max_pos
+
+def split(training_data, k):
+    """ Function for splitting our list in approximately k equal subsets. Used in our k cross-validation. 
+        Credit to: https://stackoverflow.com/questions/2130016/splitting-a-list-into-n-parts-of-approximately-equal-length """
+
+    # We first divide our training data to get our subset size and remainder
+    integer, rem = divmod(len(training_data), k)
+    subsets = []
+
+    # Create our subsets
+    for i in range(k):
+
+        # While we are below our remainder we add on an extra element, once we have accounted for the
+        # extra elements we go back to our original list length. This is because of the min(i, rem)
+        # and min(i+1, rem), since if we are below rem then we are taking an additional element on the end.
+        values = (i * integer + min(i, rem), (i + 1) * integer + min(i + 1, rem))
+        subsets.append(values)
+ 
+    return subsets
+
+def cross_validation(neural_network, training_data, k, learning_rate, epochs):
+    """ Cross validation for our network and given training data. Assumes problems are classification. """
+
+    # Get the position of our subsets within our training data
+    data_subsets_pos = split(training_data, k)
+
+    total_accuracy = 0
+    # Iterate k times
+    for test_range in range(0,k):
+
+        # Get the start and stop value of a subset we have not used yet and use it as test data and 
+        # all others as our training data
+        start, stop = data_subsets_pos[test_range]
+        test_data = training_data[start:stop]
+        new_training_data = training_data[0:start] + training_data[stop:len(training_data)]
+
+        # Traing our network on our training data
+        neural_network.back_propagation_training(new_training_data, epochs, learning_rate)
+
+        # Print our accuracy
+        print(accuracy(neural_network, test_data))
+        total_accuracy += accuracy(neural_network, test_data)
+    print("Average Accuracy: ", total_accuracy/k)
 
 def main():
     header, data = read_data(sys.argv[1], ",")
@@ -181,15 +249,20 @@ def main():
 
     # Note: add 1.0 to the front of each x vector to account for the dummy input
     training = [([1.0] + x, y) for (x, y) in pairs]
-
     # Check out the data:
     for example in training:
         print(example)
-    ### I expect the running of your program will work something like this;
-    ### this is not mandatory and you could have something else below entirely.
-    nn = NeuralNetwork([3, 6, 1])
-    nn.forward_propagate([1,2,3])
-    nn.back_propagation_training(training, 0.01)
+
+    # Get all of our input from user
+    learning_rate = float(sys.argv[2])
+    k_val = int(sys.argv[3])
+    epochs = int(sys.argv[4])
+
+    # Create our network
+    nn = NeuralNetwork([3, 6, 2])
+
+    # run cross validation
+    cross_validation(nn, training, k_val, learning_rate, epochs)
 
 if __name__ == "__main__":
     main()
