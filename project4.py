@@ -247,22 +247,37 @@ def main():
 
     pairs = convert_data_to_pairs(data, header)
 
+    # Get all of our input from user
+    learning_rate = float(sys.argv[2])
+    k_val = int(sys.argv[3])
+    epochs = int(sys.argv[4])
+
+    # If we are testing 3-bit incrementer:
+    #nn = NeuralNetwork[3,6,3]
+    #back_propagation_training(nn, pairs, learning_rate, epochs)
+    #for x,y in pairs:
+    #    nn.forward_propagate(x)
+    #    given_output = []
+    #    for i in nn.layers[len(nn.layers)-1]:
+    #        given_output.append(i)
+    #    print("Input: ", x)
+    #    print("Expect output: ", y)
+    #    print("Given output: ", given_output)
+
     # Note: add 1.0 to the front of each x vector to account for the dummy input
     training = [([1.0] + x, y) for (x, y) in pairs]
     # Check out the data:
     for example in training:
         print(example)
 
-    # Get all of our input from user
-    learning_rate = float(sys.argv[2])
-    k_val = int(sys.argv[3])
-    epochs = int(sys.argv[4])
-
     # Create our network
     nn = NeuralNetwork([3, 6, 2])
 
     # run cross validation
     cross_validation(nn, training, k_val, learning_rate, epochs)
+
+
+
 
 if __name__ == "__main__":
     main()
