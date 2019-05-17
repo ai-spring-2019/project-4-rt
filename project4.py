@@ -3,11 +3,13 @@
 Author: Richard Teerlink
 Project: Classification with Neural Networks
 Description: Implements classifications utilizing neural networks. The training of the neural network's weights are done using back 
-             propogation of errors. Currently the code is set up to test classification problems using k cross validation. You can
-             run the code by typing something of the format under Usage into the command line. To test 3-bit incrementer I just
-             had my network ouput it's data into a list an compared that to the input and intended output.
+             propogation of errors. Currently the code is set up to test classification problems using k cross validation and to test
+             the 3-bit incrementer by training the neural network over some amount of given epochs and then testing it on all examples. 
+             You can run the code by typing something of the format under Usage into the command line. Selection of the actual attributes
+             of the network, such as size of outputs, inputs, hidden layers, I have done in the actual code below in main() and must be
+             changed to run on certain datasets. 
 
-Usage: python3 project4.py DATASET.csv learning_rate k epochs
+Usual usage: python3 project4.py DATASET.csv learning_rate k epochs
 
 """
 
@@ -75,7 +77,9 @@ def accuracy(nn, pairs):
 
     for (x, y) in pairs:
         nn.forward_propagate(x)
-        class_prediction = nn.predict_class()
+        class_prediction = nn.predict_class(nn.type_class)
+        print("Predicted Output Class: ", class_prediction)
+        print("Actual Output Class: ", y[0])
         if class_prediction != y[0]:
             true_positives += 1
 
@@ -83,6 +87,32 @@ def accuracy(nn, pairs):
         # print("y =", y, ",class_pred =", class_prediction, ", outputs =", outputs)
 
     return 1 - (true_positives / total)
+
+def normalize_data(training_data):
+    """ Normalize our data so it does not affect our learning. """
+    
+    # Create our lists of means and standard deviations
+    max_val_list = []
+    min_val_list = []
+    for i in training_data[0][0]:
+        max_val_list.append(0)
+        min_val_list.append(float('inf'))
+
+    # Add all of our inputs to our mean
+    for i,o in training_data:
+        for pos in range(0, len(i)):
+            if i[pos] > max_val_list[pos]:
+                max_val_list[pos] = i[pos]
+            if i[pos] < min_val_list[pos]:
+                min_val_list[pos] = i[pos]
+
+    # Finally we normalize our data
+    for i,o in training_data:
+        for pos in range(0, len(i)):
+            if min_val_list[pos] != max_val_list[pos]:
+                i[pos] = (i[pos] - min_val_list[pos])/(max_val_list[pos] - min_val_list[pos])
+
+    random.shuffle(training_data)
 
 ################################################################################
 ### Neural Network code goes here
@@ -96,11 +126,13 @@ class NeuralNetworkNode():
         for i in range(0, weight_num):
             self.weights.append(random.random())
         self.level = level
+        if self.level != 0:
+            self.dummy_weight = random.random()
         self.error = 0
         self.activation = activation
 
 class NeuralNetwork():
-    def __init__(self, neural_data_list):
+    def __init__(self, neural_data_list, type_class):
         """ Given a list of neural network data creates our neural network. Contains methods for 
             forward propagation, back propagation, predict class, and back propagation training. """
 
@@ -119,6 +151,7 @@ class NeuralNetwork():
                         layer.append(NeuralNetworkNode(neural_data_list[i-1], level_count, 0))
                 self.layers.append(layer)
                 level_count += 1
+            self.type_class = type_class
 
     def forward_propagate(self, input_list):
         """ Runs given inputs through our neural network. """
@@ -138,16 +171,22 @@ class NeuralNetwork():
             # Then to calculate the activation of a node we simply take the dot product
             # of the weights and activation and apply the logistic function
             for node in self.layers[j]:
-                node.activation = logistic(dot_product(node.weights, activation_vector))
+                node.activation = logistic(dot_product(node.weights, activation_vector)+node.dummy_weight)
 
-    def back_propagate(self, output_list, learning_rate):
+    def back_propagate(self, output_list, learning_rate, type_class):
         """ Back_propogate, updates our weights once. """
 
         # For our given outputs, calculate errors for our output layer
-        for i in range(0, len(output_list)):
+        for i in range(0, len(self.layers[len(self.layers)-1])):
             node = self.layers[len(self.layers)-1][i]
             act = node.activation
-            node.error = act+(1-act)*(output_list[i] - act)
+            if type_class == "multi":
+                if output_list[0] == i+1:
+                    node.error = act*(1-act)*(1 - act)
+                else:
+                    node.error = act*(1-act)*(0 - act)
+            else:
+                node.error = act*(1-act)*(output_list[0] - act)
 
         # Now calculate errors for the rest of the layers
         for layer_num in range(len(self.layers)-2, -1, -1):
@@ -161,43 +200,51 @@ class NeuralNetwork():
                 node = self.layers[layer_num][node_num]
                 node.error = node.activation*(1-node.activation)*dot_product(error_vector, weight_vector)
 
-        # Adjust all of the weights, layers 2 to L
+        # Adjust all of the weights, layers L to 2
         for layer_num in range(len(self.layers)-1,0,-1):
             for node in self.layers[layer_num]:
                 for weight_num in range(0, len(node.weights)):
-                    node.weights[weight_num] = node.weights[weight_num] + learning_rate*self.layers[layer_num-1][weight_num].activation*node.error
+                    node.weights[weight_num] = node.weights[weight_num] + learning_rate * self.layers[layer_num-1][weight_num].activation * node.error
+                    node.dummy_weight = node.dummy_weight + learning_rate*node.error
 
 
-    def back_propagation_training(self, training_list, epochs, learning_rate):
+
+    def back_propagation_training(self, training_list, epochs, learning_rate, type_class):
         """ Training for our whole network. """
 
         # Train our data for our given number of epochs
         for epoch in range(0,epochs):
+            print("Epoch: ", epoch, " Out of ", epochs)
             # For all of the training data given run our input through and then back propagate the error
             for example in training_list:
                 input_list, output_list = example
                 self.forward_propagate(input_list)
-                self.back_propagate(output_list, learning_rate)
-                print(self.layers[len(self.layers)-1][0].activation)
-                print(self.layers[len(self.layers)-1][0].weights)
+                self.back_propagate(output_list, learning_rate, type_class)
 
-    def predict_class(self):
+    def predict_class(self, type_class):
         """ Returns a predicted class for classification problems. """
 
-        # Get a list of our outputs
-        output_list = []
-        for i in self.layers[len(self.layers) - 1]:
-            output_list.append(i.activation)
+        if type_class == "binary":
+            if self.layers[len(self.layers)-1][0].activation < 0.5:
+                return 0
+            else:
+                return 1
+        else:
+            # Get a list of our outputs
+            output_list = []
+            for i in self.layers[len(self.layers) - 1]:
+                output_list.append(i.activation)
+            print("Predicted Output: ", output_list)
 
-        max_value = 0
-        max_pos = 0
+            max_value = 0
+            max_pos = 0
 
-        # Return our class closest to 1
-        for j in range(0, len(output_list) - 1):
-            if output_list[j] > max_value:
-                max_value = output_list[j]
-                max_pos = j
-        return max_pos
+            # Return our class closest to 1
+            for j in range(0, len(output_list)):
+                if output_list[j] > max_value:
+                    max_value = output_list[j]
+                    max_pos = j
+            return max_pos+1
 
 def split(training_data, k):
     """ Function for splitting our list in approximately k equal subsets. Used in our k cross-validation. 
@@ -218,7 +265,7 @@ def split(training_data, k):
  
     return subsets
 
-def cross_validation(neural_network, training_data, k, learning_rate, epochs):
+def cross_validation(neural_network, training_data, k, learning_rate, epochs, type_class):
     """ Cross validation for our network and given training data. Assumes problems are classification. """
 
     # Get the position of our subsets within our training data
@@ -235,7 +282,7 @@ def cross_validation(neural_network, training_data, k, learning_rate, epochs):
         new_training_data = training_data[0:start] + training_data[stop:len(training_data)]
 
         # Traing our network on our training data
-        neural_network.back_propagation_training(new_training_data, epochs, learning_rate)
+        neural_network.back_propagation_training(new_training_data, epochs, learning_rate, type_class)
 
         # Print our accuracy
         print(accuracy(neural_network, test_data))
@@ -245,37 +292,58 @@ def cross_validation(neural_network, training_data, k, learning_rate, epochs):
 def main():
     header, data = read_data(sys.argv[1], ",")
 
-    pairs = convert_data_to_pairs(data, header)
+    if sys.argv[1] == "final_exam_train.csv":
 
-    # Get all of our input from user
-    learning_rate = float(sys.argv[2])
-    k_val = int(sys.argv[3])
-    epochs = int(sys.argv[4])
+        test_header, test_data = read_date(sys.argv[2], ",")
+        pairs = convert_data_to_pairs(data, header)
+        test_pairs = convert_data_to_pairs(test_data, test_header)
 
-    # If we are testing 3-bit incrementer:
-    #nn = NeuralNetwork[3,6,3]
-    #back_propagation_training(nn, pairs, learning_rate, epochs)
-    #for x,y in pairs:
-    #    nn.forward_propagate(x)
-    #    given_output = []
-    #    for i in nn.layers[len(nn.layers)-1]:
-    #        given_output.append(i)
-    #    print("Input: ", x)
-    #    print("Expect output: ", y)
-    #    print("Given output: ", given_output)
+        for i in range(0, int(sys.argv[3])):
+            back_propagation_training()
 
-    # Note: add 1.0 to the front of each x vector to account for the dummy input
-    training = [([1.0] + x, y) for (x, y) in pairs]
-    # Check out the data:
-    for example in training:
-        print(example)
+    else:
 
-    # Create our network
-    nn = NeuralNetwork([3, 6, 2])
+        pairs = convert_data_to_pairs(data, header)
 
-    # run cross validation
-    cross_validation(nn, training, k_val, learning_rate, epochs)
+        # Get all of our input from user
+        learning_rate = float(sys.argv[2])
+        k_val = int(sys.argv[3])
+        epochs = int(sys.argv[4])
+        type_class = str(sys.argv[5])
 
+        if sys.argv[1] == "increment-3-bit.csv":
+            # If we are testing 3-bit incrementer:
+            nn = NeuralNetwork([3,6,3])
+            nn.back_propagation_training(pairs, epochs, learning_rate)
+            total = 0
+            for x,y in pairs:
+                nn.forward_propagate(x)
+                total_error = 0
+                for i in range(0,len(nn.layers[len(nn.layers)-1])):
+                    output = nn.layers[len(nn.layers)-1][i]
+                    total_error += abs(output-y[i])
+            total += total_error
+
+            print("Accuracy: ", total/8)
+
+        else:
+
+            # Note: add 1.0 to the front of each x vector to account for the dummy input
+            training = [([1.0] + x, y) for (x, y) in pairs]
+            
+
+            # Create our network
+            nn = NeuralNetwork([3,6,1], type_class)
+            if type_class == "multi":
+                normalize_data(training)
+
+            # Check out the data:
+            for example in training:
+                print(example)
+                print()
+
+            # Run Cross Validation
+            cross_validation(nn, training, k_val, learning_rate, epochs, type_class)
 
 
 
